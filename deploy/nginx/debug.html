@@ -1,0 +1,85 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AudioHook Debug</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow: auto; }
+    .muted { color: #666; }
+    input { padding: 6px 8px; min-width: 360px; }
+  </style>
+</head>
+<body>
+  <h2>AudioHook Debug</h2>
+  <div class="row">
+    <div class="card">
+      <div><b>Status</b>: <span id="status" class="muted">connecting...</span></div>
+      <div style="margin-top:8px"><b>Token</b>: <input id="token" placeholder="paste DEBUG_UI_TOKEN" /></div>
+      <div style="margin-top:8px"><b>Filter session</b>: <input id="sessionFilter" placeholder="optional session id" /></div>
+      <div style="margin-top:8px"><button id="connectBtn">Connect</button></div>
+    </div>
+    <div class="card">
+      <div><b>Tip</b>: keep this page open during a Genesys test call.</div>
+      <div class="muted">Disable debug UI after testing.</div>
+    </div>
+  </div>
+  <h3>Transcripts</h3>
+  <pre id="transcripts"></pre>
+  <h3>Events</h3>
+  <pre id="events"></pre>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const eventsEl = document.getElementById('events');
+    const transcriptsEl = document.getElementById('transcripts');
+    const sessionFilterEl = document.getElementById('sessionFilter');
+    const tokenEl = document.getElementById('token');
+    const connectBtn = document.getElementById('connectBtn');
+
+    function append(el, line) {
+      el.textContent += line + "\n";
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function connect() {
+      const wsProto = (location.protocol === 'https:') ? 'wss' : 'ws';
+      const token = (new URLSearchParams(location.search).get('token') || tokenEl.value || '').trim();
+      if (!token) {
+        statusEl.textContent = 'missing token';
+        return;
+      }
+      const wsUrl = `${wsProto}://${location.host}/debug/ws?token=${encodeURIComponent(token)}`;
+      const ws = new WebSocket(wsUrl);
+      statusEl.textContent = 'connecting...';
+
+      ws.onopen = () => { statusEl.textContent = 'connected'; };
+      ws.onclose = () => { statusEl.textContent = 'closed'; };
+      ws.onerror = () => { statusEl.textContent = 'error'; };
+
+      ws.onmessage = (ev) => {
+        let msg;
+        try { msg = JSON.parse(ev.data); } catch { return; }
+        const sessionFilter = (sessionFilterEl.value || '').trim();
+        const sid = msg?.payload?.session_id || msg?.payload?.id || '';
+        if (sessionFilter && sid && sid !== sessionFilter) return;
+
+        const ts = new Date((msg.ts || Date.now()/1000) * 1000).toISOString();
+        if (msg.type === 'transcript') {
+          const p = msg.payload || {};
+          append(transcriptsEl, `[${ts}] ${p.speaker || p.channel || ''}${p.is_final ? ' (final)' : ''}: ${p.text || ''}`);
+        }
+        append(eventsEl, `[${ts}] ${msg.type} ${JSON.stringify(msg.payload || {})}`);
+      };
+    }
+
+    connectBtn.addEventListener('click', connect);
+    // Auto-connect when token is present in query string.
+    if (new URLSearchParams(location.search).get('token')) connect();
+  </script>
+</body>
+</html>
+

@@ -61,93 +61,13 @@ async def validate_request(connection, request):
     if path_only == "/health":
         return connection.respond(http.HTTPStatus.OK, "OK\n")
 
-    # Optional debug UI (protected by token)
-    if path_only in ("/debug", "/debug/ws"):
+    # Optional debug WS stream (UI is served by Nginx as a static file at /debug).
+    if path_only == "/debug/ws":
         if not DEBUG_UI_TOKEN:
             return connection.respond(http.HTTPStatus.NOT_FOUND, "Not found\n")
         token = (qs.get("token") or [""])[0]
         if token != DEBUG_UI_TOKEN:
             return connection.respond(http.HTTPStatus.UNAUTHORIZED, "Unauthorized\n")
-        if path_only == "/debug":
-            html = f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AudioHook Debug</title>
-  <style>
-    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }}
-    .row {{ display: flex; gap: 12px; flex-wrap: wrap; }}
-    .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px; }}
-    pre {{ white-space: pre-wrap; word-break: break-word; }}
-    .muted {{ color: #666; }}
-  </style>
-</head>
-<body>
-  <h2>AudioHook Debug</h2>
-  <div class="row">
-    <div class="card">
-      <div><b>Status</b>: <span id="status" class="muted">connecting...</span></div>
-      <div><b>Filter session</b>: <input id="sessionFilter" placeholder="optional session id" /></div>
-    </div>
-    <div class="card">
-      <div><b>Tip</b>: keep this page open during a Genesys test call.</div>
-      <div class="muted">This endpoint is protected by a token. Disable when done.</div>
-    </div>
-  </div>
-  <h3>Transcripts</h3>
-  <pre id="transcripts"></pre>
-  <h3>Events</h3>
-  <pre id="events"></pre>
-
-  <script>
-    const statusEl = document.getElementById('status');
-    const eventsEl = document.getElementById('events');
-    const transcriptsEl = document.getElementById('transcripts');
-    const sessionFilterEl = document.getElementById('sessionFilter');
-
-    const wsProto = (location.protocol === 'https:') ? 'wss' : 'ws';
-    const token = new URLSearchParams(location.search).get('token') || '';
-    const wsUrl = `${{wsProto}}://${{location.host}}/debug/ws?token=${{encodeURIComponent(token)}}`;
-    const ws = new WebSocket(wsUrl);
-
-    function append(el, line) {{
-      el.textContent += line + "\\n";
-      el.scrollTop = el.scrollHeight;
-    }}
-
-    ws.onopen = () => {{ statusEl.textContent = 'connected'; }};
-    ws.onclose = () => {{ statusEl.textContent = 'closed'; }};
-    ws.onerror = () => {{ statusEl.textContent = 'error'; }};
-
-    ws.onmessage = (ev) => {{
-      let msg;
-      try {{ msg = JSON.parse(ev.data); }} catch {{ return; }}
-      const sessionFilter = (sessionFilterEl.value || '').trim();
-      const sid = msg?.payload?.session_id || msg?.payload?.id || '';
-      if (sessionFilter && sid && sid !== sessionFilter) return;
-
-      const ts = new Date((msg.ts || Date.now()/1000) * 1000).toISOString();
-      if (msg.type === 'transcript') {{
-        const p = msg.payload || {{}};
-        append(transcriptsEl, `[${{ts}}] ${{p.speaker || p.channel || ''}}${{p.is_final ? ' (final)' : ''}}: ${{p.text || ''}}`);
-      }}
-      append(eventsEl, `[${{ts}}] ${{msg.type}} ${{JSON.stringify(msg.payload || {{}})}}`);
-    }};
-  </script>
-</body>
-</html>"""
-            # Serve HTML so browsers render and execute the JS (not as plain text).
-            hdrs = [("Content-Type", "text/html; charset=utf-8")]
-            try:
-                return connection.respond(http.HTTPStatus.OK, html, headers=hdrs)
-            except TypeError:
-                try:
-                    return connection.respond(http.HTTPStatus.OK, html, hdrs)
-                except Exception:
-                    # Fallback shape supported by older process_request contracts.
-                    return (http.HTTPStatus.OK, hdrs, html.encode("utf-8"))
-        # /debug/ws: allow WebSocket upgrade to proceed
         return None
     
     path_str = path_only

@@ -430,6 +430,11 @@ sudo systemctl reload nginx
 
 - `https://daythree-ai.duckdns.org/debug?token=<DEBUG_UI_TOKEN>`
 
+Notes:
+
+- `/debug` is served as a static HTML page by Nginx. The token is required to connect to `/debug/ws` (the page auto-connects when `?token=...` is present).
+- If you open `/debug` without a token, paste the token into the page and click `Connect`.
+
 If you get `404 Not Found` from Nginx after Certbot:
 
 - Edit `/etc/nginx/sites-available/audiohook.conf` and add the `/debug` and `/debug/ws` `location` blocks **inside the HTTPS server block** (the one that contains `listen 443 ssl;`), then reload Nginx.
