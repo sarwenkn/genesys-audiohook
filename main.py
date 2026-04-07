@@ -8,6 +8,7 @@ from datetime import datetime
 import hmac
 import hashlib
 import base64
+from urllib.parse import urlsplit, parse_qs
 
 from config import (
     GENESYS_LISTEN_HOST,
@@ -15,10 +16,12 @@ from config import (
     GENESYS_PATH,
     DEBUG,
     GENESYS_API_KEY,
-    GENESYS_ORG_ID
+    GENESYS_ORG_ID,
+    DEBUG_UI_TOKEN,
 )
 from audio_hook_server import AudioHookServer
 from utils import format_json
+from debug_hub import DebugHub
 
 # ---------------------------
 # Simple Logging Setup
@@ -32,6 +35,8 @@ logger = logging.getLogger("GenesysGoogleBridge")
 
 # Updated import: get the protocol from websockets.server (websockets 15.0)
 from websockets.server import WebSocketServerProtocol
+
+debug_hub = DebugHub()
 
 class CustomWebSocketServerProtocol(WebSocketServerProtocol):
     async def handshake(self, *args, **kwargs):
@@ -47,11 +52,96 @@ async def validate_request(connection, request):
     before upgrading to a WebSocket.
     Signature verification is disabled; only the API key is required.
     """
-    # Added health endpoint support for Digital Ocean health checks
-    if request.path == "/health":
+    raw_path = request.path
+    split = urlsplit(raw_path)
+    path_only = split.path
+    qs = parse_qs(split.query or "")
+
+    # Health endpoint support (plain HTTP)
+    if path_only == "/health":
         return connection.respond(http.HTTPStatus.OK, "OK\n")
+
+    # Optional debug UI (protected by token)
+    if path_only in ("/debug", "/debug/ws"):
+        if not DEBUG_UI_TOKEN:
+            return connection.respond(http.HTTPStatus.NOT_FOUND, "Not found\n")
+        token = (qs.get("token") or [""])[0]
+        if token != DEBUG_UI_TOKEN:
+            return connection.respond(http.HTTPStatus.UNAUTHORIZED, "Unauthorized\n")
+        if path_only == "/debug":
+            html = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AudioHook Debug</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }}
+    .row {{ display: flex; gap: 12px; flex-wrap: wrap; }}
+    .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; }}
+    .muted {{ color: #666; }}
+  </style>
+</head>
+<body>
+  <h2>AudioHook Debug</h2>
+  <div class="row">
+    <div class="card">
+      <div><b>Status</b>: <span id="status" class="muted">connecting...</span></div>
+      <div><b>Filter session</b>: <input id="sessionFilter" placeholder="optional session id" /></div>
+    </div>
+    <div class="card">
+      <div><b>Tip</b>: keep this page open during a Genesys test call.</div>
+      <div class="muted">This endpoint is protected by a token. Disable when done.</div>
+    </div>
+  </div>
+  <h3>Transcripts</h3>
+  <pre id="transcripts"></pre>
+  <h3>Events</h3>
+  <pre id="events"></pre>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const eventsEl = document.getElementById('events');
+    const transcriptsEl = document.getElementById('transcripts');
+    const sessionFilterEl = document.getElementById('sessionFilter');
+
+    const wsProto = (location.protocol === 'https:') ? 'wss' : 'ws';
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const wsUrl = `${{wsProto}}://${{location.host}}/debug/ws?token=${{encodeURIComponent(token)}}`;
+    const ws = new WebSocket(wsUrl);
+
+    function append(el, line) {{
+      el.textContent += line + "\\n";
+      el.scrollTop = el.scrollHeight;
+    }}
+
+    ws.onopen = () => {{ statusEl.textContent = 'connected'; }};
+    ws.onclose = () => {{ statusEl.textContent = 'closed'; }};
+    ws.onerror = () => {{ statusEl.textContent = 'error'; }};
+
+    ws.onmessage = (ev) => {{
+      let msg;
+      try {{ msg = JSON.parse(ev.data); }} catch {{ return; }}
+      const sessionFilter = (sessionFilterEl.value || '').trim();
+      const sid = msg?.payload?.session_id || msg?.payload?.id || '';
+      if (sessionFilter && sid && sid !== sessionFilter) return;
+
+      const ts = new Date((msg.ts || Date.now()/1000) * 1000).toISOString();
+      if (msg.type === 'transcript') {{
+        const p = msg.payload || {{}};
+        append(transcriptsEl, `[${{ts}}] ${{p.speaker || p.channel || ''}}${{p.is_final ? ' (final)' : ''}}: ${{p.text || ''}}`);
+      }}
+      append(eventsEl, `[${{ts}}] ${{msg.type}} ${{JSON.stringify(msg.payload || {{}})}}`);
+    }};
+  </script>
+</body>
+</html>"""
+            return connection.respond(http.HTTPStatus.OK, html)
+        # /debug/ws: allow WebSocket upgrade to proceed
+        return None
     
-    path_str = request.path
+    path_str = path_only
     raw_headers = dict(request.headers)
 
     logger.info(f"\n{'='*50}\n[HTTP] Starting WebSocket upgrade validation")
@@ -157,6 +247,15 @@ async def handle_genesys_connection(websocket):
     session = None
 
     try:
+        ws_path = urlsplit(getattr(websocket, "path", "") or "").path
+        if ws_path == "/debug/ws":
+            await debug_hub.register(websocket)
+            try:
+                await websocket.wait_closed()
+            finally:
+                await debug_hub.unregister(websocket)
+            return
+
         logger.info(f"Received WebSocket connection from {websocket.remote_address}")
         logger.info(f"[WS-{connection_id}] Remote address: {websocket.remote_address}")
         logger.info(f"[WS-{connection_id}] Connection state: {websocket.state}")
@@ -169,7 +268,7 @@ async def handle_genesys_connection(websocket):
 
         logger.info(f"[WS-{connection_id}] WebSocket connection established; handshake was validated beforehand.")
 
-        session = AudioHookServer(websocket)
+        session = AudioHookServer(websocket, debug_hub=debug_hub)
         logger.info(f"[WS-{connection_id}] Session created with ID: {session.session_id}")
 
         logger.info(f"[WS-{connection_id}] Starting main message loop")

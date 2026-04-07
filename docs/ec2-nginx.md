@@ -393,3 +393,39 @@ Nginx logs:
 sudo tail -f /var/log/nginx/access.log
 sudo tail -f /var/log/nginx/error.log
 ```
+
+## 15) (Temporary) Debug UI during testing
+
+This repo can expose a simple debugging page that streams events and transcripts during a test call.
+
+1) On EC2, set a token in `/opt/genesys-audiohook/.env`:
+
+```text
+DEBUG_UI_TOKEN=REPLACE_ME_WITH_A_LONG_RANDOM_TOKEN
+```
+
+Optional (saves per-call audio to WAV files under `DEBUG_AUDIO_DIR`):
+
+```text
+DEBUG_SAVE_AUDIO=true
+DEBUG_AUDIO_DIR=debug_audio
+```
+
+2) Restart the service:
+
+```bash
+sudo systemctl restart genesys-audiohook
+```
+
+3) Ensure Nginx has `/debug` and `/debug/ws` locations (the provided `deploy/nginx/audiohook.conf` includes them). Reload Nginx:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+4) Open in your browser:
+
+- `https://daythree-ai.duckdns.org/debug?token=<DEBUG_UI_TOKEN>`
+
+Disable the debug UI when done by removing `DEBUG_UI_TOKEN` (and restarting) to avoid exposing transcripts publicly.

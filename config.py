@@ -4,6 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()  # load variables from .env
 
 DEBUG = os.getenv('DEBUG', 'false').lower()
+DEBUG_UI_TOKEN = os.getenv("DEBUG_UI_TOKEN")  # optional; if set, enables /debug UI protected by ?token=...
+DEBUG_SAVE_AUDIO = os.getenv("DEBUG_SAVE_AUDIO", "false").lower() == "true"
+DEBUG_AUDIO_DIR = os.getenv("DEBUG_AUDIO_DIR", "debug_audio")
 
 # Audio buffering settings
 MAX_AUDIO_BUFFER_SIZE = 50
@@ -35,7 +38,7 @@ OPENAI_SPEECH_MODEL = os.getenv('OPENAI_SPEECH_MODEL', 'gpt-4o-mini-transcribe')
 DEFAULT_SPEECH_PROVIDER = os.getenv('DEFAULT_SPEECH_PROVIDER', 'elevenlabs').lower()  # 'elevenlabs', 'google', or 'openai'
 
 # ElevenLabs Scribe v2 (Streaming STT) settings
-ELEVENLABS_API_KEY = os.getenv("sk_4d175a2b16fc1fc520ca4690723fba27ce8467cfe42e8585")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_SCRIBE_WS_URL = os.getenv(
     "ELEVENLABS_SCRIBE_WS_URL",
     "wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&commit_strategy=vad&audio_format=pcm_16000",

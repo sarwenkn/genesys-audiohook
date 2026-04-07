@@ -6,6 +6,8 @@ import websockets
 import tempfile
 import logging
 import importlib
+import os
+import wave
 from datetime import datetime, timezone
 from websockets.exceptions import ConnectionClosed
 
@@ -17,7 +19,9 @@ from config import (
     GENESYS_BINARY_BURST_LIMIT,
     MAX_AUDIO_BUFFER_SIZE,
     SUPPORTED_LANGUAGES,
-    DEFAULT_SPEECH_PROVIDER
+    DEFAULT_SPEECH_PROVIDER,
+    DEBUG_SAVE_AUDIO,
+    DEBUG_AUDIO_DIR,
 )
 from rate_limiter import RateLimiter
 from utils import format_json, parse_iso8601_duration
@@ -32,9 +36,10 @@ from collections import deque
 logger = logging.getLogger("AudioHookServer")
 
 class AudioHookServer:
-    def __init__(self, websocket):
+    def __init__(self, websocket, debug_hub=None):
         self.session_id = str(uuid.uuid4())
         self.ws = websocket
+        self.debug_hub = debug_hub
         self.client_seq = 0
         self.server_seq = 0
         self.running = True
@@ -54,6 +59,9 @@ class AudioHookServer:
 
         self.audio_buffer = deque(maxlen=MAX_AUDIO_BUFFER_SIZE)
         self.last_frame_time = 0
+        self._last_debug_audio_ts = 0.0
+        self._wav_writers = []
+        self._wav_paths = []
 
         self.total_samples = 0
         self.offset_adjustment = 0
@@ -79,6 +87,16 @@ class AudioHookServer:
         self.assist_engine = AgentAssistEngine(self.logger)
 
         self.logger.info(f"New session started: {self.session_id}")
+        if self.debug_hub:
+            asyncio.create_task(
+                self.debug_hub.publish(
+                    "session_start",
+                    {
+                        "session_id": self.session_id,
+                        "remote_address": str(getattr(self.ws, "remote_address", "")),
+                    },
+                )
+            )
 
     def _load_transcription_provider(self, provider_name=None):
         provider = provider_name or self.speech_provider
@@ -105,6 +123,14 @@ class AudioHookServer:
     async def handle_error(self, msg: dict):
         error_code = msg["parameters"].get("code")
         error_params = msg["parameters"]
+
+        if self.debug_hub:
+            asyncio.create_task(
+                self.debug_hub.publish(
+                    "genesys_error",
+                    {"session_id": self.session_id, "code": error_code, "parameters": error_params},
+                )
+            )
 
         if error_code == 429:
             retry_after = None
@@ -358,6 +384,51 @@ class AudioHookServer:
             await self.disconnect_session(reason="error", info="Failed to send opened message")
             return
         self.logger.info(f"Session opened. Negotiated media format: {chosen}")
+        if self.debug_hub:
+            asyncio.create_task(
+                self.debug_hub.publish(
+                    "opened",
+                    {
+                        "session_id": self.session_id,
+                        "media": chosen,
+                        "conversation_id": self.conversation_id,
+                        "input_language": self.input_language,
+                        "destination_language": self.destination_language,
+                        "enable_translation": self.enable_translation,
+                        "speech_provider": self.speech_provider,
+                    },
+                )
+            )
+
+        # Optional: save per-channel audio to WAV for debugging.
+        if DEBUG_SAVE_AUDIO:
+            try:
+                os.makedirs(DEBUG_AUDIO_DIR, exist_ok=True)
+                self._wav_writers = []
+                self._wav_paths = []
+                for ch in range(channels):
+                    path = os.path.join(DEBUG_AUDIO_DIR, f"{self.session_id}_ch{ch}.wav")
+                    wf = wave.open(path, "wb")
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)  # 16-bit PCM
+                    wf.setframerate(8000)
+                    self._wav_writers.append(wf)
+                    self._wav_paths.append(path)
+
+                if self.debug_hub:
+                    asyncio.create_task(
+                        self.debug_hub.publish(
+                            "audio_recording",
+                            {
+                                "session_id": self.session_id,
+                                "paths": list(self._wav_paths),
+                                "sample_rate": 8000,
+                                "format": "pcm_s16le_wav",
+                            },
+                        )
+                    )
+            except Exception as exc:
+                self.logger.warning(f"Failed to set up WAV recording: {exc}")
 
         self.streaming_transcriptions = [self.StreamingTranscription(self.input_language, 1, self.logger) for _ in range(channels)]
         for transcription in self.streaming_transcriptions:
@@ -441,6 +512,23 @@ class AudioHookServer:
             self.logger.error(f"Error in disconnect_session: {e}")
         finally:
             self.running = False
+            for wf in self._wav_writers:
+                try:
+                    wf.close()
+                except Exception:
+                    pass
+            if self.debug_hub:
+                asyncio.create_task(
+                    self.debug_hub.publish(
+                        "session_end",
+                        {
+                            "session_id": self.session_id,
+                            "reason": reason,
+                            "info": info,
+                            "audio_paths": list(self._wav_paths),
+                        },
+                    )
+                )
             for transcription in self.streaming_transcriptions:
                 transcription.stop_streaming()
             for task in self.process_responses_tasks:
@@ -462,8 +550,30 @@ class AudioHookServer:
         for idx in range(min(channels, len(self.streaming_transcriptions))):
             pcm16 = pcmu_to_pcm16(per_channel_pcmu[idx])
             self.streaming_transcriptions[idx].feed_audio(pcm16, 0)
+            if idx < len(self._wav_writers):
+                try:
+                    self._wav_writers[idx].writeframes(pcm16)
+                except Exception:
+                    pass
 
         self.audio_buffer.append(frame_bytes)
+
+        # Throttle debug UI updates (once per second max).
+        if self.debug_hub:
+            now = time.time()
+            if now - self._last_debug_audio_ts >= 1.0:
+                self._last_debug_audio_ts = now
+                asyncio.create_task(
+                    self.debug_hub.publish(
+                        "audio_stats",
+                        {
+                            "session_id": self.session_id,
+                            "frames_received": self.audio_frames_received,
+                            "bytes_last_frame": len(frame_bytes),
+                            "total_samples": self.total_samples,
+                        },
+                    )
+                )
 
     async def process_transcription_responses(self, channel):
         while self.running:
@@ -472,6 +582,13 @@ class AudioHookServer:
                 self.logger.info(f"Processing transcription response on channel {channel}: {response}")
                 if isinstance(response, Exception):
                     self.logger.error(f"Streaming recognition error on channel {channel}: {response}")
+                    if self.debug_hub:
+                        asyncio.create_task(
+                            self.debug_hub.publish(
+                                "stt_error",
+                                {"session_id": self.session_id, "channel": channel, "error": str(response)},
+                            )
+                        )
                     await self.disconnect_session(reason="error", info="Streaming recognition failed")
                     break
                 for result in response.results:
@@ -493,6 +610,21 @@ class AudioHookServer:
                     speaker = self.channel_speakers.get(channel, f"channel_{channel}")
                     conversation_id = self.conversation_id or self.session_id
                     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+                    if self.debug_hub and translated_text:
+                        asyncio.create_task(
+                            self.debug_hub.publish(
+                                "transcript",
+                                {
+                                    "session_id": self.session_id,
+                                    "channel": channel,
+                                    "speaker": speaker,
+                                    "is_final": bool(getattr(result, "is_final", False)),
+                                    "text": translated_text,
+                                    "timestamp": timestamp,
+                                },
+                            )
+                        )
 
                     # Push transcript to DAISY asynchronously (non-blocking).
                     if self.daisy.enabled() and translated_text:
