@@ -312,6 +312,8 @@ curl -i http://localhost/health
 
 If you get `502 Bad Gateway` here, update `/etc/nginx/sites-available/audiohook.conf` to add `proxy_http_version 1.1;` inside the `location = /health` block, then reload Nginx.
 
+Important: after you run Certbot (Step 11), it will modify `/etc/nginx/sites-available/audiohook.conf` and add an HTTPS (`listen 443 ssl`) server block. If you later re-copy `deploy/nginx/audiohook.conf` over it, you may remove the Certbot TLS configuration. After Certbot, prefer editing `/etc/nginx/sites-available/audiohook.conf` in-place and reloading Nginx.
+
 ## 11) TLS certificate (Let's Encrypt)
 
 ```bash
@@ -427,5 +429,9 @@ sudo systemctl reload nginx
 4) Open in your browser:
 
 - `https://daythree-ai.duckdns.org/debug?token=<DEBUG_UI_TOKEN>`
+
+If you get `404 Not Found` from Nginx after Certbot:
+
+- Edit `/etc/nginx/sites-available/audiohook.conf` and add the `/debug` and `/debug/ws` `location` blocks **inside the HTTPS server block** (the one that contains `listen 443 ssl;`), then reload Nginx.
 
 Disable the debug UI when done by removing `DEBUG_UI_TOKEN` (and restarting) to avoid exposing transcripts publicly.

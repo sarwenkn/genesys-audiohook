@@ -138,14 +138,15 @@ async def validate_request(connection, request):
 </body>
 </html>"""
             # Serve HTML so browsers render and execute the JS (not as plain text).
+            hdrs = [("Content-Type", "text/html; charset=utf-8")]
             try:
-                return connection.respond(
-                    http.HTTPStatus.OK,
-                    html,
-                    headers=[("Content-Type", "text/html; charset=utf-8")],
-                )
+                return connection.respond(http.HTTPStatus.OK, html, headers=hdrs)
             except TypeError:
-                return connection.respond(http.HTTPStatus.OK, html)
+                try:
+                    return connection.respond(http.HTTPStatus.OK, html, hdrs)
+                except Exception:
+                    # Fallback shape supported by older process_request contracts.
+                    return (http.HTTPStatus.OK, hdrs, html.encode("utf-8"))
         # /debug/ws: allow WebSocket upgrade to proceed
         return None
     
