@@ -1,0 +1,8 @@
+websockets
+aiohttp
+pydub
+python-dotenv
+google-cloud-speech
+google-generativeai
+openai
+pydantic

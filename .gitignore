@@ -1,0 +1,18 @@
+# Secrets / environment files
+.env
+.env.*
+!.env.sample
+
+# Private keys
+*.pem
+*.ppk
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
