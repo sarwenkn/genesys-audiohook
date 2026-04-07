@@ -137,7 +137,15 @@ async def validate_request(connection, request):
   </script>
 </body>
 </html>"""
-            return connection.respond(http.HTTPStatus.OK, html)
+            # Serve HTML so browsers render and execute the JS (not as plain text).
+            try:
+                return connection.respond(
+                    http.HTTPStatus.OK,
+                    html,
+                    headers=[("Content-Type", "text/html; charset=utf-8")],
+                )
+            except TypeError:
+                return connection.respond(http.HTTPStatus.OK, html)
         # /debug/ws: allow WebSocket upgrade to proceed
         return None
     
