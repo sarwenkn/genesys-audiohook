@@ -310,6 +310,8 @@ Quick check through Nginx (HTTP):
 curl -i http://localhost/health
 ```
 
+If you get `502 Bad Gateway` here, update `/etc/nginx/sites-available/audiohook.conf` to add `proxy_http_version 1.1;` inside the `location = /health` block, then reload Nginx.
+
 ## 11) TLS certificate (Let's Encrypt)
 
 ```bash
