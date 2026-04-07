@@ -189,8 +189,11 @@ GENESYS_ORG_ID=REPLACE_ME
 # STT provider (ElevenLabs)
 DEFAULT_SPEECH_PROVIDER=elevenlabs
 ELEVENLABS_API_KEY=REPLACE_ME
-ELEVENLABS_SCRIBE_WS_URL=REPLACE_ME
-ELEVENLABS_SCRIBE_STREAM_MODE=binary
+# Optional override; default points to ElevenLabs realtime STT endpoint.
+# ELEVENLABS_SCRIBE_WS_URL=wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&commit_strategy=vad&audio_format=pcm_16000
+ELEVENLABS_SCRIBE_STREAM_MODE=json_base64
+# Resample Genesys 8kHz audio to 16kHz for ElevenLabs (recommended)
+ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE=16000
 
 # Optional (leave unset until needed)
 # DAISY_BASE_URL=https://your-daisy-host

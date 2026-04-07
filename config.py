@@ -35,11 +35,15 @@ OPENAI_SPEECH_MODEL = os.getenv('OPENAI_SPEECH_MODEL', 'gpt-4o-mini-transcribe')
 DEFAULT_SPEECH_PROVIDER = os.getenv('DEFAULT_SPEECH_PROVIDER', 'elevenlabs').lower()  # 'elevenlabs', 'google', or 'openai'
 
 # ElevenLabs Scribe v2 (Streaming STT) settings
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_SCRIBE_WS_URL = os.getenv("ELEVENLABS_SCRIBE_WS_URL")  # e.g. wss://... (set explicitly)
+ELEVENLABS_API_KEY = os.getenv("sk_4d175a2b16fc1fc520ca4690723fba27ce8467cfe42e8585")
+ELEVENLABS_SCRIBE_WS_URL = os.getenv(
+    "ELEVENLABS_SCRIBE_WS_URL",
+    "wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&commit_strategy=vad&audio_format=pcm_16000",
+)  # Optional override; defaults to ElevenLabs Realtime STT endpoint.
 ELEVENLABS_SCRIBE_START_MESSAGE_JSON = os.getenv("ELEVENLABS_SCRIBE_START_MESSAGE_JSON")  # optional JSON string
 ELEVENLABS_SCRIBE_STREAM_MODE = os.getenv("ELEVENLABS_SCRIBE_STREAM_MODE", "binary").lower()  # binary | json_base64
 ELEVENLABS_SCRIBE_LANG = os.getenv("ELEVENLABS_SCRIBE_LANG")  # optional override (e.g. en)
+ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE = int(os.getenv("ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE", "16000"))  # 16000 recommended
 
 # Genesys API key and Organization ID
 GENESYS_API_KEY = os.getenv('GENESYS_API_KEY')

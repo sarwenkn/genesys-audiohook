@@ -1,4 +1,5 @@
 import asyncio
+import audioop
 import base64
 import json
 import queue
@@ -15,6 +16,7 @@ from config import (
     ELEVENLABS_SCRIBE_START_MESSAGE_JSON,
     ELEVENLABS_SCRIBE_STREAM_MODE,
     ELEVENLABS_SCRIBE_WS_URL,
+    ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE,
 )
 
 
@@ -64,6 +66,7 @@ class StreamingTranscription:
         self.response_queues = [queue.Queue() for _ in range(channels)]
         self.streaming_threads = [None] * channels
         self.running = True
+        self._ratecv_states = [None] * channels
 
     def start_streaming(self):
         for channel in range(self.channels):
@@ -175,10 +178,33 @@ class StreamingTranscription:
                 await asyncio.sleep(0.005)
                 continue
 
-            if ELEVENLABS_SCRIBE_STREAM_MODE == "json_base64":
-                payload = {"audio": base64.b64encode(pcm16_data).decode("ascii")}
+            # Genesys AudioHook media arrives at 8kHz. ElevenLabs realtime STT defaults to 16kHz PCM input,
+            # so we resample to ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE (default 16000).
+            if ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE and ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE != 8000:
+                try:
+                    converted, state = audioop.ratecv(
+                        pcm16_data,
+                        2,  # sample width bytes (16-bit PCM)
+                        1,  # channels
+                        8000,
+                        ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE,
+                        self._ratecv_states[channel],
+                    )
+                    self._ratecv_states[channel] = state
+                    pcm16_data = converted
+                except Exception as exc:
+                    self.logger.warning(f"ElevenLabs resample failed (channel={channel}): {exc}")
+
+            if ELEVENLABS_SCRIBE_STREAM_MODE in ("json_base64", "json"):
+                # Preferred protocol for ElevenLabs realtime STT: send base64-encoded audio in JSON messages.
+                payload = {
+                    "message_type": "input_audio_chunk",
+                    "audio_base_64": base64.b64encode(pcm16_data).decode("ascii"),
+                    "sample_rate": ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE or 8000,
+                }
                 await ws.send(json.dumps(payload))
             else:
+                # Fallback legacy mode (may not work with current ElevenLabs realtime STT endpoint).
                 await ws.send(pcm16_data)
 
     def _queue_get(self, channel: int):
@@ -202,7 +228,16 @@ class StreamingTranscription:
         except Exception:
             return None
 
-        # Try a few common shapes.
+        # ElevenLabs realtime STT messages typically use message_type + text.
+        if isinstance(data.get("message_type"), str) and isinstance(data.get("text"), str):
+            msg_type = data.get("message_type")
+            text = data.get("text")
+            is_final = msg_type in ("committed_transcript", "committed_transcript_with_timestamps")
+            alt = Alternative(transcript=text, confidence=None)
+            result = Result(alternatives=[alt], is_final=is_final)
+            return MockResponse(results=[result])
+
+        # Try a few common legacy shapes.
         text = None
         is_final = None
         confidence = None
