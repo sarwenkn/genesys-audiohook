@@ -812,6 +812,12 @@ class AudioHookServer:
 
     async def _send_json(self, msg: dict):
         try:
+            # If Genesys is in a mode that doesn't accept server->client events (transcripts),
+            # avoid sending any "event" messages once we know they're rejected.
+            if msg.get("type") == "event" and not self.events_allowed:
+                self.logger.debug("Dropping outgoing event message because events are disabled for this session")
+                return False
+
             if not await self.message_limiter.acquire():
                 current_rate = self.message_limiter.get_current_rate()
                 self.logger.warning(
