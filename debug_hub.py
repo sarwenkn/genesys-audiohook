@@ -22,11 +22,28 @@ class DebugHub:
         async with self._lock:
             self._clients.add(websocket)
             backlog = list(self._events)
+            client_count = len(self._clients)
+            backlog_count = len(backlog)
+            now = time.time()
+            hello_evt: Dict[str, Any] = {
+                "ts": now,
+                "type": "debug_connected",
+                "payload": {
+                    "client_count": client_count,
+                    "backlog_events": backlog_count,
+                    "server_ts": now,
+                },
+            }
+            self._events.append(hello_evt)
         for evt in backlog:
             try:
                 await websocket.send(json.dumps(evt))
             except Exception:
                 break
+        try:
+            await websocket.send(json.dumps(hello_evt))
+        except Exception:
+            return
 
     async def unregister(self, websocket: Any) -> None:
         async with self._lock:
@@ -57,4 +74,3 @@ class DebugHub:
             async with self._lock:
                 for ws in dead:
                     self._clients.discard(ws)
-

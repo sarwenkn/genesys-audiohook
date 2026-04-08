@@ -48,6 +48,7 @@ class AudioHookServer:
         self.logger = logger.getChild(f"AudioHookServer_{self.session_id}")
         self.audio_frames_sent = 0
         self.audio_frames_received = 0
+        self.events_allowed = True
         self.rate_limit_state = {
             "retry_count": 0,
             "last_retry_time": 0,
@@ -131,6 +132,23 @@ class AudioHookServer:
                     {"session_id": self.session_id, "code": error_code, "parameters": error_params},
                 )
             )
+
+        # Some AudioHook modes (e.g., Monitor) don't accept server->client event messages.
+        # If Genesys tells us events aren't allowed, stop sending transcript events to avoid spamming errors.
+        if error_code == 400:
+            msg_text = str(error_params.get("message") or "")
+            if "Event messages are not allowed in this mode" in msg_text:
+                if self.events_allowed:
+                    self.logger.warning("Genesys reports events are not allowed in this mode; disabling outgoing event messages.")
+                    self.events_allowed = False
+                    if self.debug_hub:
+                        asyncio.create_task(
+                            self.debug_hub.publish(
+                                "events_disabled",
+                                {"session_id": self.session_id, "reason": msg_text},
+                            )
+                        )
+                return True
 
         if error_code == 429:
             retry_after = None
@@ -783,6 +801,8 @@ class AudioHookServer:
                         self.server_seq += 1
                     else:
                         self.logger.debug("Transcript event dropped due to rate limiting")
+                else:
+                    self.logger.debug("Skipping transcript event because events are disabled for this session")
             else:
                 await asyncio.sleep(0.01)    
 

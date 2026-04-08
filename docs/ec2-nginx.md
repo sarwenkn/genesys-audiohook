@@ -440,3 +440,7 @@ If you get `404 Not Found` from Nginx after Certbot:
 - Edit `/etc/nginx/sites-available/audiohook.conf` and add the `/debug` and `/debug/ws` `location` blocks **inside the HTTPS server block** (the one that contains `listen 443 ssl;`), then reload Nginx.
 
 Disable the debug UI when done by removing `DEBUG_UI_TOKEN` (and restarting) to avoid exposing transcripts publicly.
+
+Security note:
+
+- If you enable verbose debug logging, be careful: some libraries may log request headers. Never expose API keys in logs. Rotate any key if it was displayed in logs or screenshots.

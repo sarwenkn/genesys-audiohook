@@ -11,13 +11,18 @@
     pre { white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow: auto; }
     .muted { color: #666; }
     input { padding: 6px 8px; min-width: 360px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #f3f4f6; font-size: 12px; margin-left: 8px; }
   </style>
 </head>
 <body>
   <h2>AudioHook Debug</h2>
   <div class="row">
     <div class="card">
-      <div><b>Status</b>: <span id="status" class="muted">connecting...</span></div>
+      <div>
+        <b>Status</b>: <span id="status" class="muted">idle</span>
+        <span class="pill">events: <span id="evtCount">0</span></span>
+        <span class="pill">last: <span id="lastMsg">-</span></span>
+      </div>
       <div style="margin-top:8px"><b>Token</b>: <input id="token" placeholder="paste DEBUG_UI_TOKEN" /></div>
       <div style="margin-top:8px"><b>Filter session</b>: <input id="sessionFilter" placeholder="optional session id" /></div>
       <div style="margin-top:8px"><button id="connectBtn">Connect</button></div>
@@ -39,6 +44,11 @@
     const sessionFilterEl = document.getElementById('sessionFilter');
     const tokenEl = document.getElementById('token');
     const connectBtn = document.getElementById('connectBtn');
+    const evtCountEl = document.getElementById('evtCount');
+    const lastMsgEl = document.getElementById('lastMsg');
+
+    let evtCount = 0;
+    let ws = null;
 
     function append(el, line) {
       el.textContent += line + "\n";
@@ -52,17 +62,25 @@
         statusEl.textContent = 'missing token';
         return;
       }
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        try { ws.close(1000, "reconnect"); } catch {}
+      }
       const wsUrl = `${wsProto}://${location.host}/debug/ws?token=${encodeURIComponent(token)}`;
-      const ws = new WebSocket(wsUrl);
       statusEl.textContent = 'connecting...';
+      ws = new WebSocket(wsUrl);
 
       ws.onopen = () => { statusEl.textContent = 'connected'; };
-      ws.onclose = () => { statusEl.textContent = 'closed'; };
+      ws.onclose = (ev) => {
+        statusEl.textContent = `closed (${ev.code}${ev.reason ? `: ${ev.reason}` : ''})`;
+      };
       ws.onerror = () => { statusEl.textContent = 'error'; };
 
       ws.onmessage = (ev) => {
         let msg;
         try { msg = JSON.parse(ev.data); } catch { return; }
+        evtCount += 1;
+        evtCountEl.textContent = String(evtCount);
+        lastMsgEl.textContent = new Date().toLocaleTimeString();
         const sessionFilter = (sessionFilterEl.value || '').trim();
         const sid = msg?.payload?.session_id || msg?.payload?.id || '';
         if (sessionFilter && sid && sid !== sessionFilter) return;
@@ -82,4 +100,3 @@
   </script>
 </body>
 </html>
-

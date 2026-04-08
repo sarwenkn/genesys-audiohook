@@ -251,9 +251,12 @@ Path: {GENESYS_PATH}
 """
     logger.info(startup_msg)
 
-    websockets_logger = logging.getLogger('websockets')
-    if DEBUG != 'true':
-        websockets_logger.setLevel(logging.INFO)
+websockets_logger = logging.getLogger('websockets')
+# Never log raw WebSocket frames/headers in production-like environments since it may leak secrets
+# (e.g., xi-api-key when connecting to ElevenLabs).
+websockets_logger.setLevel(logging.INFO)
+logging.getLogger("websockets.client").setLevel(logging.INFO)
+logging.getLogger("websockets.server").setLevel(logging.INFO)
 
     # Monkey-patch the default protocol in the server.
     import websockets.server
