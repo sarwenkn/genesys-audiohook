@@ -564,7 +564,7 @@ All configurable parameters are defined in `config.py` and loaded from environme
 | `ELEVENLABS_SCRIBE_START_MESSAGE_JSON` | Optional JSON message sent after connect                                 | -                       |
 | `ELEVENLABS_SCRIBE_STREAM_MODE` | Audio send mode ('binary' or 'json_base64')                                   | `binary`                |
 | `DAISY_BASE_URL`                | Base URL for DAISY REST integration (enables push when set)                   | -                       |
-| `DAISY_UPDATE_PATH`             | DAISY endpoint path                                                           | `/agent-assist/update`  |
+| `DAISY_UPDATE_PATH`             | DAISY endpoint path                                                           | `/live_transcription/update`  |
 | `DAISY_API_KEY`                 | DAISY API key (sent as `Authorization: Bearer ...` when set)                  | -                       |
 | `GOOGLE_CLOUD_PROJECT`          | Google Cloud project ID for Speech-to-Text API (required for Google provider) | -                       |
 | `GOOGLE_APPLICATION_CREDENTIALS`| JSON key for Google Cloud service account (required for Google provider)      | -                       |

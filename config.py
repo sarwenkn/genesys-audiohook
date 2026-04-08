@@ -68,7 +68,7 @@ GENESYS_SEND_TRANSCRIPT_EVENTS = os.getenv("GENESYS_SEND_TRANSCRIPT_EVENTS", "tr
 
 # DAISY integration settings
 DAISY_BASE_URL = os.getenv("DAISY_BASE_URL")  # e.g. https://daisy.example.com
-DAISY_UPDATE_PATH = os.getenv("DAISY_UPDATE_PATH", "/agent-assist/update")
+DAISY_UPDATE_PATH = os.getenv("DAISY_UPDATE_PATH", "/live_transcription/update")
 DAISY_API_KEY = os.getenv("DAISY_API_KEY")  # optional; if set sent as Authorization: Bearer
 DAISY_TIMEOUT_SECS = float(os.getenv("DAISY_TIMEOUT_SECS", "2.0"))
 DAISY_MAX_RETRIES = int(os.getenv("DAISY_MAX_RETRIES", "2"))
