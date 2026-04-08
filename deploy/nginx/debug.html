@@ -12,6 +12,25 @@
     .muted { color: #666; }
     input { padding: 6px 8px; min-width: 360px; }
     .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #f3f4f6; font-size: 12px; margin-left: 8px; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 980px) { .split { grid-template-columns: 1fr; } }
+    .log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 45vh;
+      overflow: auto;
+      background: #fafafa;
+      border: 1px solid #eee;
+      border-radius: 8px;
+      padding: 10px;
+      line-height: 1.35;
+    }
+    .line { padding: 2px 0; }
+    .final { color: #111; }
+    .partial { color: #666; }
+    .meta { color: #888; margin-right: 6px; }
   </style>
 </head>
 <body>
@@ -33,26 +52,108 @@
     </div>
   </div>
   <h3>Transcripts</h3>
-  <pre id="transcripts"></pre>
+  <div class="split">
+    <div class="card">
+      <div>
+        <b>Customer</b> <span class="muted">(channel 0)</span>
+        <span class="pill">lines: <span id="custCount">0</span></span>
+      </div>
+      <div id="customerLog" class="log" aria-label="Customer transcripts"></div>
+    </div>
+    <div class="card">
+      <div>
+        <b>Agent</b> <span class="muted">(channel 1)</span>
+        <span class="pill">lines: <span id="agentCount">0</span></span>
+      </div>
+      <div id="agentLog" class="log" aria-label="Agent transcripts"></div>
+    </div>
+  </div>
   <h3>Events</h3>
   <pre id="events"></pre>
 
   <script>
     const statusEl = document.getElementById('status');
     const eventsEl = document.getElementById('events');
-    const transcriptsEl = document.getElementById('transcripts');
+    const customerLogEl = document.getElementById('customerLog');
+    const agentLogEl = document.getElementById('agentLog');
     const sessionFilterEl = document.getElementById('sessionFilter');
     const tokenEl = document.getElementById('token');
     const connectBtn = document.getElementById('connectBtn');
     const evtCountEl = document.getElementById('evtCount');
     const lastMsgEl = document.getElementById('lastMsg');
+    const custCountEl = document.getElementById('custCount');
+    const agentCountEl = document.getElementById('agentCount');
 
     let evtCount = 0;
+    let custLines = 0;
+    let agentLines = 0;
     let ws = null;
 
-    function append(el, line) {
+    const partialElBySide = { customer: null, agent: null };
+
+    function appendPre(el, line) {
       el.textContent += line + "\n";
       el.scrollTop = el.scrollHeight;
+    }
+
+    function sideFromPayload(p) {
+      // Preferred mapping: always channel 0 => customer, channel 1 => agent.
+      // Fall back to speaker when channel isn't present.
+      const ch = (p && (p.channel ?? p.channelId));
+      if (ch === 0 || ch === "0") return "customer";
+      if (ch === 1 || ch === "1") return "agent";
+      const sp = String(p?.speaker || "").toLowerCase();
+      if (sp === "customer") return "customer";
+      if (sp === "agent") return "agent";
+      return null;
+    }
+
+    function appendTranscript(side, tsIso, text, isFinal) {
+      const container = side === "customer" ? customerLogEl : agentLogEl;
+      const countEl = side === "customer" ? custCountEl : agentCountEl;
+
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = `[${tsIso}]`;
+
+      const msg = document.createElement('span');
+      msg.className = isFinal ? 'final' : 'partial';
+      msg.textContent = text || '';
+
+      if (!isFinal) {
+        // Update "live" partial line in place for this side.
+        let line = partialElBySide[side];
+        if (!line) {
+          line = document.createElement('div');
+          line.className = 'line partial';
+          line.appendChild(meta);
+          line.appendChild(msg);
+          container.appendChild(line);
+          partialElBySide[side] = line;
+          if (side === "customer") custLines += 1; else agentLines += 1;
+          countEl.textContent = String(side === "customer" ? custLines : agentLines);
+        } else {
+          line.innerHTML = '';
+          line.appendChild(meta);
+          line.appendChild(msg);
+        }
+      } else {
+        // Final transcript: replace existing partial (if any) or append a new line.
+        const existing = partialElBySide[side];
+        const line = existing || document.createElement('div');
+        line.className = 'line final';
+        line.innerHTML = '';
+        line.appendChild(meta);
+        line.appendChild(msg);
+        if (!existing) {
+          container.appendChild(line);
+          if (side === "customer") custLines += 1; else agentLines += 1;
+          countEl.textContent = String(side === "customer" ? custLines : agentLines);
+        }
+        partialElBySide[side] = null;
+      }
+
+      container.scrollTop = container.scrollHeight;
     }
 
     function connect() {
@@ -88,9 +189,10 @@
         const ts = new Date((msg.ts || Date.now()/1000) * 1000).toISOString();
         if (msg.type === 'transcript') {
           const p = msg.payload || {};
-          append(transcriptsEl, `[${ts}] ${p.speaker || p.channel || ''}${p.is_final ? ' (final)' : ''}: ${p.text || ''}`);
+          const side = sideFromPayload(p) || "customer";
+          appendTranscript(side, ts, p.text || '', Boolean(p.is_final));
         }
-        append(eventsEl, `[${ts}] ${msg.type} ${JSON.stringify(msg.payload || {})}`);
+        appendPre(eventsEl, `[${ts}] ${msg.type} ${JSON.stringify(msg.payload || {})}`);
       };
     }
 
