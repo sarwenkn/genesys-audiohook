@@ -178,6 +178,7 @@ async def handle_genesys_connection(websocket):
     try:
         ws_path = urlsplit(getattr(websocket, "path", "") or "").path
         if ws_path == "/debug/ws":
+            logger.info(f"[WS-{connection_id}] Debug UI client connected")
             await debug_hub.register(websocket)
             try:
                 await websocket.wait_closed()
