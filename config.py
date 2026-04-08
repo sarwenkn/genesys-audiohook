@@ -57,6 +57,10 @@ GENESYS_ORG_ID = os.getenv('GENESYS_ORG_ID')
 if not GENESYS_ORG_ID:
     raise ValueError("GENESYS_ORG_ID not found in environment variables.")
 
+# If false, do not send "type=event" transcript messages back to Genesys.
+# This is useful for AudioHook configurations that reject event messages (e.g., Monitor mode).
+GENESYS_SEND_TRANSCRIPT_EVENTS = os.getenv("GENESYS_SEND_TRANSCRIPT_EVENTS", "true").lower() == "true"
+
 # DAISY integration settings
 DAISY_BASE_URL = os.getenv("DAISY_BASE_URL")  # e.g. https://daisy.example.com
 DAISY_UPDATE_PATH = os.getenv("DAISY_UPDATE_PATH", "/agent-assist/update")

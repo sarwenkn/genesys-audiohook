@@ -22,6 +22,7 @@ from config import (
     DEFAULT_SPEECH_PROVIDER,
     DEBUG_SAVE_AUDIO,
     DEBUG_AUDIO_DIR,
+    GENESYS_SEND_TRANSCRIPT_EVENTS,
 )
 from rate_limiter import RateLimiter
 from utils import format_json, parse_iso8601_duration
@@ -776,6 +777,10 @@ class AudioHookServer:
     
                     channel_id = channel  # Integer channel index
     
+                    if not GENESYS_SEND_TRANSCRIPT_EVENTS:
+                        self.logger.debug("Skipping transcript event because GENESYS_SEND_TRANSCRIPT_EVENTS is false")
+                        continue
+
                     transcript_event = {
                         "version": "2",
                         "type": "event",
