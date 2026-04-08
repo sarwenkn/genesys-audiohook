@@ -122,14 +122,18 @@ class AudioHookServer:
                 raise
 
     async def handle_error(self, msg: dict):
-        error_code = msg["parameters"].get("code")
-        error_params = msg["parameters"]
+        error_params = msg.get("parameters") or {}
+        error_code_raw = error_params.get("code")
+        try:
+            error_code = int(error_code_raw) if error_code_raw is not None else None
+        except (TypeError, ValueError):
+            error_code = None
 
         if self.debug_hub:
             asyncio.create_task(
                 self.debug_hub.publish(
                     "genesys_error",
-                    {"session_id": self.session_id, "code": error_code, "parameters": error_params},
+                    {"session_id": self.session_id, "code": error_code_raw, "parameters": error_params},
                 )
             )
 
@@ -137,7 +141,7 @@ class AudioHookServer:
         # If Genesys tells us events aren't allowed, stop sending transcript events to avoid spamming errors.
         if error_code == 400:
             msg_text = str(error_params.get("message") or "")
-            if "Event messages are not allowed in this mode" in msg_text:
+            if "event messages are not allowed" in msg_text.lower():
                 if self.events_allowed:
                     self.logger.warning("Genesys reports events are not allowed in this mode; disabling outgoing event messages.")
                     self.events_allowed = False
