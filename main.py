@@ -176,7 +176,15 @@ async def handle_genesys_connection(websocket):
     session = None
 
     try:
-        ws_path = urlsplit(getattr(websocket, "path", "") or "").path
+        # websockets has changed connection objects across major versions.
+        # Prefer pulling the request path from `websocket.request` when present
+        # (websockets >= 15), falling back to legacy `websocket.path`.
+        raw_path = getattr(websocket, "path", None) or ""
+        req = getattr(websocket, "request", None)
+        if req is not None:
+            raw_path = getattr(req, "path", None) or getattr(req, "raw_path", None) or raw_path
+
+        ws_path = urlsplit(raw_path or "").path
         if ws_path == "/debug/ws":
             logger.info(f"[WS-{connection_id}] Debug UI client connected")
             await debug_hub.register(websocket)
