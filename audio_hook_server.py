@@ -23,9 +23,10 @@ from config import (
     DEBUG_SAVE_AUDIO,
     DEBUG_AUDIO_DIR,
     GENESYS_SEND_TRANSCRIPT_EVENTS,
+    ALLOWED_STT_LANGUAGES,
 )
 from rate_limiter import RateLimiter
-from utils import format_json, parse_iso8601_duration
+from utils import format_json, parse_iso8601_duration, sanitize_transcript_text
 
 from language_mapping import normalize_language_code
 from google_gemini_translation import translate_with_gemini
@@ -302,6 +303,16 @@ class AudioHookServer:
         self.conversation_id = msg["parameters"].get("conversationId")
 
         self.input_language = normalize_language_code(custom_config.get("inputLanguage", "en-US"))
+
+        allowed_langs = [normalize_language_code(x.strip()) for x in str(ALLOWED_STT_LANGUAGES).split(",") if x.strip()]
+        allowed_primary = {x.split("-")[0].lower() for x in allowed_langs} if allowed_langs else set()
+        requested_primary = self.input_language.split("-")[0].lower() if self.input_language else ""
+        if allowed_primary and requested_primary not in allowed_primary:
+            self.logger.warning(
+                f"Requested inputLanguage '{self.input_language}' is not allowed by ALLOWED_STT_LANGUAGES; "
+                f"falling back to 'en-US'. Allowed: {', '.join(sorted(allowed_langs))}"
+            )
+            self.input_language = "en-US"
 
         self.enable_translation = custom_config.get("enableTranslation", False)
 
@@ -619,6 +630,14 @@ class AudioHookServer:
                         continue
                     alt = result.alternatives[0]
                     transcript_text = alt.transcript
+                    sanitized = sanitize_transcript_text(transcript_text, ("latin", "han"), min_letters=2)
+                    if sanitized is None:
+                        self.logger.debug(
+                            f"Dropping transcript containing disallowed scripts (only English/Malay/Chinese allowed). "
+                            f"Original: {transcript_text!r}"
+                        )
+                        continue
+                    transcript_text = sanitized
                     source_lang = self.input_language
                     if self.enable_translation:
                         dest_lang = self.destination_language

@@ -48,6 +48,11 @@ ELEVENLABS_SCRIBE_STREAM_MODE = os.getenv("ELEVENLABS_SCRIBE_STREAM_MODE", "bina
 ELEVENLABS_SCRIBE_LANG = os.getenv("ELEVENLABS_SCRIBE_LANG")  # optional override (e.g. en)
 ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE = int(os.getenv("ELEVENLABS_SCRIBE_TARGET_SAMPLE_RATE", "16000"))  # 16000 recommended
 
+# Language policy
+# - ALLOWED_STT_LANGUAGES limits which input languages are accepted from Genesys open messages.
+# - This prevents accidental/unsupported languages being selected at runtime.
+ALLOWED_STT_LANGUAGES = os.getenv("ALLOWED_STT_LANGUAGES", "en-US,ms-MY,zh-CN")
+
 # Genesys API key and Organization ID
 GENESYS_API_KEY = os.getenv('GENESYS_API_KEY')
 if not GENESYS_API_KEY:
@@ -80,4 +85,4 @@ GENESYS_BINARY_BURST_LIMIT = 25
 RATE_LIMIT_MAX_RETRIES = 3
 
 # Transcription Connector language support
-SUPPORTED_LANGUAGES = os.getenv("SUPPORTED_LANGUAGES", "es-ES,it-IT")
+SUPPORTED_LANGUAGES = os.getenv("SUPPORTED_LANGUAGES", "en-US,ms-MY,zh-CN")

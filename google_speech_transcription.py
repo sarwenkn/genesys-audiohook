@@ -13,7 +13,8 @@ from google.api_core.client_options import ClientOptions
 from config import (
     GOOGLE_APPLICATION_CREDENTIALS,
     GOOGLE_CLOUD_PROJECT,
-    GOOGLE_SPEECH_MODEL
+    GOOGLE_SPEECH_MODEL,
+    ALLOWED_STT_LANGUAGES,
 )
 
 def normalize_language_code(lang: str) -> str:
@@ -80,13 +81,20 @@ class StreamingTranscription:
             else:
                 self.logger.info(f"Using {GOOGLE_SPEECH_MODEL} model without word-level confidence - will use default confidence of 1.0")
             
+            allowed_langs = [
+                normalize_language_code(x.strip())
+                for x in str(ALLOWED_STT_LANGUAGES).split(",")
+                if x.strip()
+            ]
+            language_codes = allowed_langs or [self.language]
+
             recognition_config = cloud_speech.RecognitionConfig(
                 explicit_decoding_config=cloud_speech.ExplicitDecodingConfig(
                     encoding=cloud_speech.ExplicitDecodingConfig.AudioEncoding.LINEAR16,
                     sample_rate_hertz=8000,
                     audio_channel_count=1  # Each stream is mono
                 ),
-                language_codes=[self.language],
+                language_codes=language_codes,
                 model=GOOGLE_SPEECH_MODEL,
                 features=features
             )

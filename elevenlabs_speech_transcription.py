@@ -4,7 +4,6 @@ import base64
 import json
 import queue
 import threading
-import contextlib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -101,7 +100,11 @@ class StreamingTranscription:
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._run_ws(channel))
+            try:
+                loop.run_until_complete(self._run_ws(channel))
+            except asyncio.CancelledError:
+                # Expected during shutdown / reconnect; don't print a traceback from the background thread.
+                return
         finally:
             try:
                 loop.stop()
@@ -146,8 +149,10 @@ class StreamingTranscription:
                         await self._send_audio_loop(ws, channel)
                     finally:
                         recv_task.cancel()
-                        with contextlib.suppress(Exception):
+                        try:
                             await recv_task
+                        except asyncio.CancelledError:
+                            pass
                 backoff = 0.25
             except Exception as exc:
                 self.logger.warning(f"ElevenLabs WS error (channel={channel}): {exc}")
@@ -214,13 +219,17 @@ class StreamingTranscription:
             return b""
 
     async def _recv_loop(self, ws, channel: int):
-        while self.running:
-            msg = await ws.recv()
-            if isinstance(msg, bytes):
-                continue
-            event = self._parse_transcript_event(msg)
-            if event:
-                self.response_queues[channel].put(event)
+        try:
+            while self.running:
+                msg = await ws.recv()
+                if isinstance(msg, bytes):
+                    continue
+                event = self._parse_transcript_event(msg)
+                if event:
+                    self.response_queues[channel].put(event)
+        except asyncio.CancelledError:
+            # Normal cancellation path when shutting down / reconnecting.
+            return
 
     def _parse_transcript_event(self, msg: str) -> Optional[MockResponse]:
         try:
